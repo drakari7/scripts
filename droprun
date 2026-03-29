@@ -1,0 +1,70 @@
+#!/usr/bin/python3.10
+
+from datetime import datetime, timedelta
+import os
+import argparse
+import subprocess
+
+from services.key_manager import KeyManager, load_keys
+from crypto_clients.utils import get_all_product_definitions, timestamp_to_iso_s
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-p', '--products', action='append', required=True, default=[])
+parser.add_argument('-e', '--executable')
+parser.add_argument('--via')
+parser.add_argument('--fetch-start')
+parser.add_argument('--live', action='store_true')
+args, extra_args = parser.parse_known_args()
+
+# Load keys and product config all
+key_file = "/home/shreyash/master-config/subprojects/exchange_configs/keys.toml"
+keyman = KeyManager(load_keys(key_file))
+
+product_def_file = "/home/shreyash/master-config/subprojects/product_config/product_config_all.toml"
+product_defs = {p.product: p for p in get_all_product_definitions(product_def_file)}
+
+# Make product uppercase
+products = [p.upper() for p in args.products]
+pdef = product_defs[products[0]]
+
+if args.via:
+    via = args.via
+else:
+    tags = {"office"}
+    if pdef.exchange == "KUC":
+        tags.add("spot" if pdef.api == "spot" else "future")
+    if pdef.exchange == "BTX":
+        tags.add("1")
+    via = keyman.get(account=pdef.account, type="read_only", tags=tags, allow_multiple=True)
+
+if args.executable:
+    exe = args.executable
+else:
+    # This should work for all except bybit
+    exchange = via.split("-")[0]
+    exe = f"/home/shreyash/crypto/subprojects/dropcopy_{exchange}/dropcopy_{exchange}.py"
+
+
+command = f"python3 {exe} --product-definitions {product_def_file} --config {key_file} --via {via}"
+for p in products:
+    command += f" -p {p}"
+
+if args.live:
+    persistence_path = "/home/shreyash/random/dropcopy_persistence"
+    os.makedirs(persistence_path, exist_ok=True)
+    command += f" --shmem-prefix /shreyash.test.crypto --persistence-path {persistence_path}"
+else:
+    if args.fetch_start:
+        command += f" --fetch-start {args.fetch_start}"
+    else:
+        start = datetime.now() - timedelta(hours=3)
+        command += f" --fetch-start {timestamp_to_iso_s(start.timestamp())}"
+
+# Pass on any extra args
+for arg in extra_args:
+    command += f" {arg}"
+
+print(command)
+os.environ["PYTHONPATH"] += ":/home/shreyash/crypto/dist-test/lib64"
+subprocess.run(command, shell=True)

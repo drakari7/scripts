@@ -1,0 +1,4 @@
+#!/bin/bash
+
+last_file=$(ls "$@" | tail -1)
+less $last_file

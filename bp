@@ -1,0 +1,19 @@
+#!/bin/bash
+
+set -e
+set -o pipefail
+set -o errexit
+start_dir=$(pwd)
+directories=$(git submodule--helper list | awk '{print $4}' |  fzf --multi)
+
+# # Go to directories and bump each
+for dir in $directories;
+do
+    cd ${dir} > /dev/null
+    git checkout master
+    git pull
+    echo
+    echo "Bumped subproject ${dir}"
+    echo
+    cd ${start_dir} > /dev/null
+done

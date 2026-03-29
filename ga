@@ -1,0 +1,14 @@
+#!/bin/bash
+
+set -e
+set -o pipefail
+set -o errexit
+set -o nounset
+
+# ga - git add with fuzzy options
+files_to_add=$(git ls-files -m -o --exclude-standard | fzf --multi)
+
+for f in $files_to_add;
+do
+    git add $f
+done
