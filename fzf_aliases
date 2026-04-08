@@ -2,11 +2,14 @@
 
 alias glNoGraph='git log --color=always --format="%C(auto)%h%d %s %C(bold black)%cr %C(cyan)%an" "$@"'
 _gitLogLineToHash="echo {} | grep -o '[a-f0-9]\{7\}' | head -1"
-_viewGitLogLine="$_gitLogLineToHash | xargs -I % sh -c 'git show --color=always % | diff-so-fancy'"
+_viewGitLogLine="$_gitLogLineToHash | xargs -I % sh -c 'git show --color=always % | delta --features=diff-so-fancy --line-numbers'"
 
 # Fzf with preview
 fzz(){
-    fzf --preview "bat --style=numbers --color=always --line-range :500 {}" $@;
+    fzf --preview "bat --style=numbers,changes --theme=gruvbox-light --color=always --line-range :500 {}" \
+        --preview-window=right:56% \
+        --bind 'ctrl-k:preview-half-page-up,ctrl-j:preview-half-page-down' \
+        $@;
 }
 
 ## fbr - checkout git branch (including remote branches)
@@ -67,6 +70,6 @@ rf() {
         --color "hl:-1:underline,hl+:-1:underline:reverse" \
         --delimiter : \
         --preview 'bat --color=always {1} --highlight-line {2}' \
-        --preview-window 'up,60%,border-bottom,+{2}+3/3,~3' 
-            # --bind 'enter:become(nvim {1} +{2})'
+        --preview-window 'up,60%,border-bottom,+{2}+3/3,~3' \
+        --bind 'enter:become(nvim {1} +{2})'
 }
