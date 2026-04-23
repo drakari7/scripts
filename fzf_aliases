@@ -2,7 +2,7 @@
 
 alias glNoGraph='git log --color=always --format="%C(auto)%h%d %s %C(bold black)%cr %C(cyan)%an" "$@"'
 _gitLogLineToHash="echo {} | grep -o '[a-f0-9]\{7\}' | head -1"
-_viewGitLogLine="$_gitLogLineToHash | xargs -I % sh -c 'git show --color=always % | delta --features=diff-so-fancy --line-numbers'"
+_viewGitLogLine="$_gitLogLineToHash | xargs -I % sh -c 'git show --color=always % | delta --features=diff-so-fancy --paging=always'"
 
 # Fzf with preview
 fzz(){
@@ -54,7 +54,7 @@ fsh() {
       --format="%C(auto)%h %s %C(bold black)%cr %C(cyan)%an" "$@" |
   fzf --ansi --no-sort --reverse --tiebreak=index --bind=ctrl-s:toggle-sort \
       --preview="$_viewGitLogLine" \
-      --bind "enter:execute:$_viewGitLogLine   | less -R"
+      --bind "enter:execute:$_viewGitLogLine"
 }
 
 fcs() {
