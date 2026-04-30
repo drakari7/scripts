@@ -7,7 +7,7 @@ _viewGitLogLine="$_gitLogLineToHash | xargs -I % sh -c 'git show --color=always 
 # Fzf with preview
 fzz(){
     fzf --preview "bat --style=numbers,changes --theme=gruvbox-light --color=always --line-range :500 {}" \
-        --preview-window=right:56% \
+        --preview-window=right:60% \
         --bind 'ctrl-k:preview-half-page-up,ctrl-j:preview-half-page-down' \
         $@;
 }
@@ -65,13 +65,20 @@ fcs() {
 }
 
 rf() {
-    rg --color=always --line-number --no-heading --smart-case "${*:-}" |
-        fzf --ansi \
-        --color "hl:-1:underline,hl+:-1:underline:reverse" \
-        --delimiter : \
-        --preview 'bat --color=always {1} --highlight-line {2}' \
-        --preview-window 'up,60%,border-bottom,+{2}+3/3,~3' \
-        --bind 'enter:become(nvim {1} +{2})'
+    rg --color=always --line-number --no-heading --smart-case \
+        --max-columns=200 --max-columns-preview --colors='path:none' "${*:-}" |
+        awk -F: 'BEGIN{OFS=":"} {
+            n = split($1, p, "/")
+            rest = $0; sub(/^[^:]*:/, "", rest)
+            print "\033[1;35m" p[n] "\033[0m", $1 ":" rest
+        }' |
+            fzf --ansi \
+            --color "hl:-1:underline,hl+:-1:underline:reverse" \
+            --delimiter : \
+            --with-nth=1,3.. \
+            --preview 'bat --color=always {2} --highlight-line {3}' \
+            --preview-window 'right,60%,border-left,+{3}+3/3,~3' \
+            --bind 'enter:become(nvim {2} +{3})'
 }
 
 # Ctrl-G — inline picker for git dirty files (mirrors fzf's ctrl-t)
@@ -91,7 +98,8 @@ fzf-git-dirty-widget() {
             else
               bat --color=always --style=plain {} 2>/dev/null || cat {}
             fi
-          '
+          ' \
+        --preview-window=right:60% \
   )
   local ret=$?
   if (( ret == 0 )) && [[ -n $selected ]]; then
