@@ -1,135 +1,147 @@
-#!/bin/bash
+#!/bin/zsh
+# fzf_aliases — interactive pickers for files, git branches/commits, and dirty files.
 
-alias glNoGraph='git log --color=always --format="%C(auto)%h%d %s %C(bold black)%cr %C(cyan)%an" "$@"'
-_gitLogLineToHash="echo {} | grep -o '[a-f0-9]\{7\}' | head -1"
-_viewGitLogLine="$_gitLogLineToHash | xargs -I % sh -c 'git show --color=always % | delta --features=diff-so-fancy --paging=always'"
+# ─── shared helpers ────────────────────────────────────────────────────────────
 
-# Fzf with preview
-fzz(){
+alias git_log_compact='git log --color=always --format="%C(auto)%h%d %s %C(bold black)%cr %C(cyan)%an"'
+
+# Shell snippet for fzf --preview: extract the commit hash from {} (the selected log line) and show it through delta
+# {} is expanded by fzf, $hash by sh.
+_view_git_log_line='hash=$(echo {} | grep -o "[a-f0-9]\{7\}" | head -1); git show --color=always "$hash" | delta --features=diff-so-fancy --paging=always'
+
+# ─── file & content search ─────────────────────────────────────────────────────
+
+# fzz — fzf over args with bat preview
+fzz() {
     fzf --preview "bat --style=numbers,changes --theme=gruvbox-light --color=always --line-range :500 {}" \
         --preview-window=right:60% \
         --bind 'ctrl-k:preview-half-page-up,ctrl-j:preview-half-page-down' \
-        $@;
+        "$@"
 }
 
-## fbr - checkout git branch (including remote branches)
+# rf — ripgrep + fzf, basename-prefixed for fast filename matching
+rf() {
+    rg --color=always --line-number --no-heading --smart-case \
+       --max-columns=200 --max-columns-preview --colors='path:none' "${*:-}" |
+       awk -F: '{
+           n = split($1, p, "/")
+           print "\033[1;35m" p[n] "\033[0m:" $0
+       }' |
+       fzf --ansi \
+           --color "hl:-1:underline,hl+:-1:underline:reverse" \
+           --delimiter : \
+           --with-nth=1,3.. \
+           --preview 'bat --color=always {2} --highlight-line {3}' \
+           --preview-window 'right,50%,border-left,+{3}+3/3,~3' \
+           --bind 'enter:become(nvim {2} +{3})'
+}
+
+# ─── git: branches, tags, commits ──────────────────────────────────────────────
+
+# fbr — switch to a local or remote branch
 fbr() {
-  local branches branch
-  branches=$(git branch --all | grep -v HEAD) &&
-  branch=$(echo "$branches" |
-           fzf-tmux -d $(( 2 + $(wc -l <<< "$branches") )) +m) &&
-  git checkout $(echo "$branch" | sed "s/.* //" | sed "s#remotes/[^/]*/##")
+    local branch
+    branch=$(git branch --all | grep -v HEAD | fzf --height=40%) || return
+    branch="${branch##* }"            # trim leading whitespace / asterisk
+    branch="${branch#remotes/*/}"     # strip remotes/<remote>/ prefix if present
+    git switch "$branch"
 }
 
-# fco_preview - checkout git branch/tag, with a preview showing the commits between the tag/branch and HEAD
+# fco — checkout a branch or tag (with commit-list preview)
 fco() {
     local tags branches target branch
     branches=$(
         git --no-pager branch --all \
             --format="%(if)%(HEAD)%(then)%(else)%(if:equals=HEAD)%(refname:strip=3)%(then)%(else)%1B[0;34;1mbranch%09%1B[m%(refname:short)%(end)%(end)" \
-        | sed '/^$/d') || return
-    tags=$(
-        git --no-pager tag | awk '{print "\x1b[35;1mtag\x1b[m\t" $1}') || return
+            | sed '/^$/d') || return
+    tags=$(git --no-pager tag | awk '{print "\x1b[35;1mtag\x1b[m\t" $1}') || return
     target=$(
         (echo "$branches"; echo "$tags") |
-        fzf --no-hscroll --no-multi -n 2 \
-            --ansi --preview="git --no-pager log -150 --pretty=format:%s '..{2}'") || return
+            fzf --no-hscroll --no-multi -n 2 --ansi \
+                --preview="git --no-pager log -150 --pretty=format:%s '..{2}'") || return
     branch=$(awk '{print $2}' <<<"$target" | sed 's#origin/##')
-    git checkout $branch
+    git checkout "$branch"
 }
 
-
-# fcoc_preview - checkout git commit with previews
+# fcoc — checkout a commit
 fcoc() {
-  local commit
-  commit=$( glNoGraph |
-    fzf --no-sort --reverse --tiebreak=index --no-multi \
-        --ansi --preview="$_viewGitLogLine" ) &&
-  git checkout $(echo "$commit" | sed "s/ .*//")
+    local commit
+    commit=$(git_log_compact |
+        fzf --no-sort --reverse --tiebreak=index --no-multi \
+            --ansi --preview="$_view_git_log_line") &&
+        git checkout "${commit%% *}"
 }
 
-# fshow - git commit browser
+# fsh — git commit browser with diff preview
 fsh() {
-  git log --graph --color=always \
-      --format="%C(auto)%h %s %C(bold black)%cr %C(cyan)%an" "$@" |
-  fzf --ansi --no-sort --reverse --tiebreak=index --bind=ctrl-s:toggle-sort \
-      --preview="$_viewGitLogLine" \
-      --bind "enter:execute:$_viewGitLogLine"
+    git log --graph --color=always \
+        --format="%C(auto)%h %s %C(bold black)%cr %C(cyan)%an" "$@" |
+        fzf --ansi --no-sort --reverse --tiebreak=index --bind=ctrl-s:toggle-sort \
+            --preview="$_view_git_log_line" \
+            --bind "enter:execute:$_view_git_log_line"
 }
 
+# fcs — cd into a submodule
 fcs() {
-    subdir=$(git submodule--helper list | awk '{print $4}' |  fzf)
-    if [[ -e $subdir ]]; then
-        cd $subdir
-    fi
+    local root subdir
+    root=$(git rev-parse --show-superproject-working-tree 2>/dev/null)
+    [[ -z $root ]] && { root=$(git rev-parse --show-toplevel) || return; }
+    subdir=$(git config --file "$root/.gitmodules" --get-regexp path | awk '{print $2}' | fzf) || return
+    [[ -d $root/$subdir ]] && cd "$root/$subdir"
 }
 
-rf() {
-    rg --color=always --line-number --no-heading --smart-case \
-        --max-columns=200 --max-columns-preview --colors='path:none' "${*:-}" |
-        awk -F: 'BEGIN{OFS=":"} {
-            n = split($1, p, "/")
-            rest = $0; sub(/^[^:]*:/, "", rest)
-            print "\033[1;35m" p[n] "\033[0m", $1 ":" rest
-        }' |
-            fzf --ansi \
-            --color "hl:-1:underline,hl+:-1:underline:reverse" \
-            --delimiter : \
-            --with-nth=1,3.. \
-            --preview 'bat --color=always {2} --highlight-line {3}' \
-            --preview-window 'right,60%,border-left,+{3}+3/3,~3' \
-            --bind 'enter:become(nvim {2} +{3})'
-}
+# ─── git: dirty files (modified + untracked) ───────────────────────────────────
 
-# Ctrl-G — inline picker for git dirty files (mirrors fzf's ctrl-t)
-fzf-git-dirty-widget() {
-  setopt localoptions pipefail no_aliases 2>/dev/null
-  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
-    zle -M "not in a git repo"; return
-  }
-  local selected
-  selected=$(
+# Shared picker for dirty/untracked files. Extra fzf args are forwarded.
+_fzf_dirty_files() {
     git ls-files -m -o --exclude-standard |
-      fzf -m \
-          --header 'git dirty files — tab: multi-select' \
-          --preview '
-            if git ls-files --error-unmatch -- {} >/dev/null 2>&1; then
-              git diff --color=always -- {}
-            else
-              bat --color=always --style=plain {} 2>/dev/null || cat {}
-            fi
-          ' \
-        --preview-window=right:60% \
-  )
-  local ret=$?
-  if (( ret == 0 )) && [[ -n $selected ]]; then
-    local line files=()
-    while IFS= read -r line; do
-      [[ -z $line ]] && continue
-      files+=("${(q)line}")
-    done <<< "$selected"
-    LBUFFER="${LBUFFER}${files[*]} "
-  fi
-  zle reset-prompt
-  return $ret
+        fzf --multi \
+            --preview '
+                if git ls-files --error-unmatch -- {} >/dev/null 2>&1; then
+                    git diff --color=always -- {}
+                else
+                    bat --color=always --style=plain {} 2>/dev/null || cat {}
+                fi
+            ' \
+            --preview-window=right:60% \
+            "$@"
+}
+
+# ga — fuzzy git add of dirty files
+ga() {
+    local files
+    files=$(_fzf_dirty_files) || return
+    [[ -n $files ]] && git add -- ${(f)files}
+}
+
+# gr — fuzzy git restore of dirty files
+gr() {
+    local files
+    files=$(_fzf_dirty_files) || return
+    [[ -n $files ]] && git restore -- ${(f)files}
+}
+
+# Ctrl-G — inline picker that pastes selections onto the prompt
+fzf-git-dirty-widget() {
+    setopt localoptions pipefail no_aliases 2>/dev/null
+    git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+        zle -M "not in a git repo"; return
+    }
+    local selected
+    selected=$(_fzf_dirty_files --header 'git dirty files — tab: multi-select')
+    local ret=$?
+    if (( ret == 0 )) && [[ -n $selected ]]; then
+        local line files=()
+        while IFS= read -r line; do
+            [[ -z $line ]] && continue
+            files+=("${(q)line}")
+        done <<< "$selected"
+        LBUFFER="${LBUFFER}${files[*]} "
+    fi
+    zle reset-prompt
+    return $ret
 }
 zle -N fzf-git-dirty-widget
 bindkey -M emacs '^G' fzf-git-dirty-widget
 bindkey -M viins '^G' fzf-git-dirty-widget
 bindkey -M vicmd '^G' fzf-git-dirty-widget
-
-# ga - fuzzy git add of dirty files
-ga() {
-  local files
-  files=$(git ls-files -m -o --exclude-standard | fzf --multi) || return
-  [[ -z $files ]] && return
-  git add -- ${(f)files}
-}
-
-# gr - fuzzy git restore of dirty files
-gr() {
-  local files
-  files=$(git ls-files -m -o --exclude-standard | fzf --multi) || return
-  [[ -z $files ]] && return
-  git restore -- ${(f)files}
-}
