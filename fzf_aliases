@@ -3,11 +3,20 @@
 
 # ─── shared helpers ────────────────────────────────────────────────────────────
 
-alias git_log_compact='git log --color=always --format="%C(auto)%h%d %s %C(bold black)%cr %C(cyan)%an"'
+# Compact one-line `git log` with refs, used by fcoc and fsh. Forwards args (e.g. a path).
+_git_log_compact() {
+    git log --color=always \
+        --format="%C(auto)%h%d %s %C(bold black)%cr %C(cyan)%an" "$@"
+}
 
-# Shell snippet for fzf --preview: extract the commit hash from {} (the selected log line) and show it through delta
-# {} is expanded by fzf, $hash by sh.
-_view_git_log_line='hash=$(echo {} | grep -o "[a-f0-9]\{7\}" | head -1); git show --color=always "$hash" | delta --features=diff-so-fancy --paging=always'
+# fzf --preview snippet: show the commit at the selected line through delta.
+# Stored as a multi-line string (not a function) because fzf runs preview commands
+# in a fresh `sh -c` subshell that can't see zsh functions defined in the parent.
+# {} is expanded by fzf (the highlighted line); $hash is expanded by sh at run time.
+_view_git_log_line='
+    hash=$(echo {} | grep -o "[a-f0-9]\{7\}" | head -1)
+    git show --color=always "$hash" | delta --features=diff-so-fancy --paging=always
+'
 
 # ─── file & content search ─────────────────────────────────────────────────────
 
@@ -15,8 +24,7 @@ _view_git_log_line='hash=$(echo {} | grep -o "[a-f0-9]\{7\}" | head -1); git sho
 fzz() {
     fzf --preview "bat --style=numbers,changes --theme=gruvbox-light --color=always --line-range :500 {}" \
         --preview-window=right:60% \
-        --bind 'ctrl-k:preview-half-page-up,ctrl-j:preview-half-page-down' \
-        "$@"
+        --bind 'ctrl-k:preview-half-page-up,ctrl-j:preview-half-page-down'
 }
 
 # rf — ripgrep + fzf, basename-prefixed for fast filename matching
@@ -36,49 +44,100 @@ rf() {
            --bind 'enter:become(nvim {2} +{3})'
 }
 
-# ─── git: branches, tags, commits ──────────────────────────────────────────────
+# ─── system ────────────────────────────────────────────────────────────────────
 
-# fbr — switch to a local or remote branch
-fbr() {
-    local branch
-    branch=$(git branch --all | grep -v HEAD | fzf --height=40%) || return
-    branch="${branch##* }"            # trim leading whitespace / asterisk
-    branch="${branch#remotes/*/}"     # strip remotes/<remote>/ prefix if present
-    git switch "$branch"
+# fkill — pick processes to kill (multi-select). Defaults to -TERM; pass another signal as $1.
+fkill() {
+    local sig=${1:--TERM}
+    local pids
+    pids=$(ps -ef | sed 1d | fzf --multi --header='select processes to kill' | awk '{print $2}') || return
+    [[ -n $pids ]] && echo "$pids" | xargs kill "$sig"
 }
+
+# ─── git: branches, tags, commits ──────────────────────────────────────────────
 
 # fco — checkout a branch or tag (with commit-list preview)
 fco() {
-    local tags branches target branch
-    branches=$(
-        git --no-pager branch --all \
-            --format="%(if)%(HEAD)%(then)%(else)%(if:equals=HEAD)%(refname:strip=3)%(then)%(else)%1B[0;34;1mbranch%09%1B[m%(refname:short)%(end)%(end)" \
-            | sed '/^$/d') || return
-    tags=$(git --no-pager tag | awk '{print "\x1b[35;1mtag\x1b[m\t" $1}') || return
-    target=$(
-        (echo "$branches"; echo "$tags") |
-            fzf --no-hscroll --no-multi -n 2 --ansi \
-                --preview="git --no-pager log -150 --pretty=format:%s '..{2}'") || return
-    branch=$(awk '{print $2}' <<<"$target" | sed 's#origin/##')
-    git checkout "$branch"
+    local blue=$'\e[1;34m' magenta=$'\e[1;35m' reset=$'\e[m'
+    local current branches_and_tags target name
+
+    current=$(git symbolic-ref --short HEAD 2>/dev/null)
+    branches_and_tags=$(
+        git for-each-ref --format='%(refname:short)' refs/heads refs/remotes \
+            | grep -v '/HEAD$' \
+            | grep -vx "$current" \
+            | awk -v c="$blue" -v r="$reset" '{print c "branch" r "\t" $1}'
+        git --no-pager tag \
+            | awk -v c="$magenta" -v r="$reset" '{print c "tag" r "\t" $1}'
+    )
+    target=$(fzf --no-hscroll --no-multi -n 2 --ansi \
+                 --preview="git --no-pager log -150 --pretty=format:%s '..{2}'" <<<"$branches_and_tags") || return
+    name=$(awk '{print $2}' <<<"$target")
+    git checkout "${name#origin/}"
 }
 
 # fcoc — checkout a commit
 fcoc() {
     local commit
-    commit=$(git_log_compact |
-        fzf --no-sort --reverse --tiebreak=index --no-multi \
-            --ansi --preview="$_view_git_log_line") &&
+    commit=$(_git_log_compact |
+        fzf --no-sort --reverse --tiebreak=index --no-multi --ansi \
+            --preview="$_view_git_log_line") &&
         git checkout "${commit%% *}"
 }
 
 # fsh — git commit browser with diff preview
 fsh() {
-    git log --graph --color=always \
-        --format="%C(auto)%h %s %C(bold black)%cr %C(cyan)%an" "$@" |
+    _git_log_compact "$@" |
         fzf --ansi --no-sort --reverse --tiebreak=index --bind=ctrl-s:toggle-sort \
             --preview="$_view_git_log_line" \
             --bind "enter:execute:$_view_git_log_line"
+}
+
+# frl — reflog browser (for "I lost a commit, help"). Pick to checkout.
+frl() {
+    local entry
+    entry=$(git reflog --color=always |
+        fzf --ansi --no-sort --preview="$_view_git_log_line") || return
+    git checkout "${entry%% *}"
+}
+
+# fstash — pick a stash. Enter pops; ctrl-a applies (keep stash); ctrl-d drops.
+fstash() {
+    local entry
+    entry=$(git stash list --color=always |
+        fzf --ansi --no-sort \
+            --preview='git stash show -p --color=always $(echo {} | cut -d: -f1)' \
+            --header 'enter: pop · ctrl-a: apply · ctrl-d: drop' \
+            --bind 'ctrl-a:become(git stash apply $(echo {} | cut -d: -f1))' \
+            --bind 'ctrl-d:become(git stash drop $(echo {} | cut -d: -f1))') || return
+    git stash pop "${entry%%:*}"
+}
+
+# fconflicts — open conflicting files (during merge/rebase) in nvim
+fconflicts() {
+    local files
+    files=$(git diff --name-only --diff-filter=U |
+        fzf --multi --preview='git diff --color=always -- {}') || return
+    [[ -n $files ]] && nvim ${(f)files}
+}
+
+# fbd — pick local branches to delete (multi-select). Use `git branch -D` to force.
+fbd() {
+    local branches
+    branches=$(git branch | grep -v '^\*' | awk '{print $1}' |
+        fzf --multi --preview='git log --color=always --oneline -20 {}') || return
+    [[ -n $branches ]] && echo "$branches" | xargs git branch -d
+}
+
+# fmr — pick a GitLab MR to check out (requires glab and jq)
+fmr() {
+    local mr iid
+    mr=$(glab mr list --output=json |
+        jq -r '.[] | "\(.iid)\t\(.title)\t\(.author.username)"' |
+        fzf --delimiter='\t' --with-nth=1,2 \
+            --preview='glab mr view {1}') || return
+    iid=$(awk -F'\t' '{print $1}' <<<"$mr")
+    glab mr checkout "$iid"
 }
 
 # fcs — cd into a submodule
@@ -145,3 +204,8 @@ zle -N fzf-git-dirty-widget
 bindkey -M emacs '^G' fzf-git-dirty-widget
 bindkey -M viins '^G' fzf-git-dirty-widget
 bindkey -M vicmd '^G' fzf-git-dirty-widget
+
+# ─── completions ───────────────────────────────────────────────────────────────
+
+# Make `fsh` complete its args the same way `git log` does (paths, refs, --since=, etc.)
+compdef _git fsh=git-log
