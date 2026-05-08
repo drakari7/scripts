@@ -153,7 +153,7 @@ fcs() {
 
 # Shared picker for dirty/untracked files. Extra fzf args are forwarded.
 _fzf_dirty_files() {
-    git ls-files -m -o --exclude-standard |
+    git ls-files -m -o --deduplicate --exclude-standard |
         fzf --multi \
             --preview '
                 if git ls-files --error-unmatch -- {} >/dev/null 2>&1; then
