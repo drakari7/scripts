@@ -6,7 +6,7 @@
 # Compact one-line `git log` with refs, used by fcoc and fsh. Forwards args (e.g. a path).
 _git_log_compact() {
     git log --color=always \
-        --format="%C(auto)%h%d %s %C(bold black)%cr %C(cyan)%an" "$@"
+        --format="%C(auto)%h %s %C(bold black)%cr %C(cyan)%an" "$@"
 }
 
 # fzf --preview snippet: show the commit at the selected line through delta.
@@ -52,6 +52,44 @@ fkill() {
     local pids
     pids=$(ps -ef | sed 1d | fzf --multi --header='select processes to kill' | awk '{print $2}') || return
     [[ -n $pids ]] && echo "$pids" | xargs kill "$sig"
+}
+
+# fj — pick a suspended job to resume. enter: fg · ctrl-b: bg (continue in background)
+# Captures `jobs -l` to a tempfile first because the builtin doesn't see the parent
+# shell's job table when called inside $(...).
+fj() {
+    local tmp out key line jid
+    tmp=$(mktemp) || return
+    jobs -l > $tmp
+    if ! grep -qiE 'suspended|stopped' $tmp; then
+        echo "no suspended jobs" >&2
+        rm -f $tmp
+        return 1
+    fi
+    out=$(grep -iE 'suspended|stopped' $tmp |
+        fzf --no-sort --no-multi --ansi \
+            --expect=ctrl-b \
+            --header 'enter: fg · ctrl-b: bg' \
+            --preview '
+                pid=$(echo {} | sed "s/^\[[0-9]*\]//" | grep -oE "[0-9]+" | head -1)
+                [ -n "$pid" ] && {
+                    ps -p $pid -o pid,user,%cpu,%mem,etime,stat,command 2>/dev/null
+                    echo
+                    command -v pstree >/dev/null && pstree -p $pid 2>/dev/null
+                }
+            ' \
+            --preview-window=down:40%)
+    rm -f $tmp
+    [[ -z $out ]] && return
+    key=${out%%$'\n'*}
+    line=${out##*$'\n'}
+    jid=${${line%%]*}#\[}
+    [[ -z $jid ]] && return
+    if [[ $key == ctrl-b ]]; then
+        bg %$jid
+    else
+        fg %$jid
+    fi
 }
 
 # ─── git: branches, tags, commits ──────────────────────────────────────────────
@@ -164,6 +202,13 @@ _fzf_dirty_files() {
             ' \
             --preview-window=right:60% \
             "$@"
+}
+
+# ng — open all dirty/untracked files in nvim
+ng() {
+    local files
+    files=$(git ls-files -m -o --deduplicate --exclude-standard) || return
+    [[ -n $files ]] && nvim ${(f)files}
 }
 
 # ga — fuzzy git add of dirty files
