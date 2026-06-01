@@ -28,6 +28,11 @@ fzz() {
         --bind 'ctrl-k:preview-half-page-up,ctrl-j:preview-half-page-down'
 }
 
+# nf / lf / bf — pick file(s) with fzz, then open in nvim / less / bat
+nf() { local files; files=$(fzz) && nvim ${(f)files}; }
+lf() { local files; files=$(fzz) && less ${(f)files}; }
+bf() { local files; files=$(fzz) && bat  ${(f)files}; }
+
 # rf — ripgrep + fzf, basename-prefixed for fast filename matching
 rf() {
     rg --color=always --line-number --no-heading --smart-case \
