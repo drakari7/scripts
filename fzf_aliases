@@ -124,7 +124,7 @@ fco() {
 fcoc() {
     local commit
     commit=$(_git_log_compact |
-        fzf --no-sort --reverse --tiebreak=index --no-multi --ansi \
+        fzf --reverse --tiebreak=index --no-multi --ansi \
             --preview="$_view_git_log_line") &&
         git checkout "${commit%% *}"
 }
@@ -132,8 +132,9 @@ fcoc() {
 # fsh — git commit browser with diff preview
 fsh() {
     _git_log_compact "$@" |
-        fzf --ansi --no-sort --reverse --tiebreak=index --bind=ctrl-s:toggle-sort \
+        fzf --ansi --reverse --tiebreak=index --bind=ctrl-s:toggle-sort \
             --preview="$_view_git_log_line" \
+            --preview-window=right:40% \
             --bind "enter:execute:$_view_git_log_line"
 }
 
