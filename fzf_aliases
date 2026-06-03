@@ -25,7 +25,7 @@ fzz() {
     fzf --multi \
         --preview "bat --style=numbers,changes,header --theme=gruvbox-light --color=always --line-range :500 {}" \
         --preview-window=right:60% \
-        --bind 'ctrl-k:preview-half-page-up,ctrl-j:preview-half-page-down'
+        --bind 'ctrl-u:preview-half-page-up,ctrl-d:preview-half-page-down'
 }
 
 # nf / lf / bf — pick file(s) with fzz, then open in nvim / less / bat
@@ -166,12 +166,21 @@ fconflicts() {
     [[ -n $files ]] && nvim ${(f)files}
 }
 
-# fbd — pick local branches to delete (multi-select). Use `git branch -D` to force.
+# fbd — browse local branches and delete them explicitly (multi-select).
+# ctrl-d deletes selected branches, ctrl-alt-d force deletes (-D)
 fbd() {
-    local branches
-    branches=$(git branch | grep -v '^\*' | awk '{print $1}' |
-        fzf --multi --preview='git log --color=always --oneline -20 {}') || return
-    [[ -n $branches ]] && echo "$branches" | xargs git branch -d
+    # skip current branch (*) and branches checked out in worktrees (+) — git won't delete those.
+    # master/main are excluded so they can't be deleted, even by accident.
+    local list="git branch | grep -v '^[*+]' | awk '{print \$1}' | grep -vxE 'master|main'"
+    eval "$list" |
+        fzf --multi --preview='git log --color=always --oneline -20 {}' \
+            --header='ctrl-d: delete | ctrl-alt-d: force delete' \
+            --color='header:blue,footer:red' \
+            --bind='enter:ignore' \
+            --bind="ctrl-d:transform-footer(git branch -d {+} 2>&1)+reload($list)" \
+            --bind="ctrl-alt-d:transform-footer(git branch -D {+} 2>&1)+reload($list)" \
+            --bind='zero:become(echo "no matching branches" >&2)' \
+        >/dev/null
 }
 
 # fmr — pick a GitLab MR to check out (requires glab and jq)
