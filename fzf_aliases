@@ -220,10 +220,15 @@ _fzf_dirty_files() {
             "$@"
 }
 
-# ng — open all dirty/untracked files in nvim
+# ng — open dirty files in nvim. No arg: working-tree dirty/untracked files.
+# With N (e.g. `ng 1`): files changed in the last N commits.
 ng() {
     local files
-    files=$(git ls-files -m -o --deduplicate --exclude-standard) || return
+    if [[ -n $1 ]]; then
+        files=$(git diff --name-only "HEAD~$1" HEAD) || return
+    else
+        files=$(git ls-files -m -o --deduplicate --exclude-standard) || return
+    fi
     [[ -n $files ]] && nvim ${(f)files}
 }
 
