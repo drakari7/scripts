@@ -28,10 +28,22 @@ fzz() {
         --bind 'ctrl-u:preview-half-page-up,ctrl-d:preview-half-page-down'
 }
 
-# nf / lf / bf — pick file(s) with fzz, then open in nvim / less / bat
-nf() { local files; files=$(fzz) && nvim ${(f)files}; }
-lf() { local files; files=$(fzz) && less ${(f)files}; }
-bf() { local files; files=$(fzz) && bat  ${(f)files}; }
+# nf / lf / bf — pick file(s) with fzz, open in nvim / less / bat, then on exit
+# print the absolute path(s) so the picked file isn't lost from the scrollback,
+# and copy them to the clipboard (delete the xclip line to disable).
+_fzz_open() {
+    local opener=$1 files
+    files=$(fzz) || return
+    [[ -z $files ]] && return
+    local -a paths=("${(f)files}")            # one selected file per line
+    "$opener" "${paths[@]}"                   # blocks until you exit
+    paths=("${paths[@]:A}")                    # -> absolute paths
+    print -Pn "%F{green}↪ opened:%f "; print -r -- "${(j:, :)paths}"
+    command -v xclip >/dev/null && print -rn -- "${(pj:\n:)paths}" | xclip -selection clipboard
+}
+nf() { _fzz_open nvim; }
+lf() { _fzz_open less; }
+bf() { _fzz_open bat;  }
 
 # rf — ripgrep + fzf, basename-prefixed for fast filename matching
 rf() {
@@ -179,7 +191,7 @@ fbd() {
             --bind='enter:ignore' \
             --bind="ctrl-d:transform-footer(git branch -d {+} 2>&1)+reload($list)" \
             --bind="ctrl-alt-d:transform-footer(git branch -D {+} 2>&1)+reload($list)" \
-            --bind='zero:become(echo "no matching branches" >&2)' \
+            --bind='zero:become(echo "no (more) matching branches" >&2)' \
         >/dev/null
 }
 
