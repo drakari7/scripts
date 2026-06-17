@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Update the "version:" line in cluster files matching a glob.
+# Usage: bump_version <glob> <version>
+#   e.g. bump_version '*evrecord*' event_record-abc123_2026_06_17-1300
+# Run from a config root dir (the one containing clusters/).
+set -euo pipefail
+
+if [[ $# -ne 2 ]]; then
+    echo "usage: bump_version <glob> <version>" >&2
+    exit 1
+fi
+
+glob="$1"
+version="$2"
+
+shopt -s nullglob
+files=(clusters/$glob)
+
+if [[ ${#files[@]} -eq 0 ]]; then
+    echo "no files match: clusters/$glob" >&2
+    exit 1
+fi
+
+for f in "${files[@]}"; do
+    sed -i "s|^version:.*|version: $version|" "$f"
+    echo "updated: $f"
+done
