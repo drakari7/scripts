@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-
-fd -tf -p ${2} | xargs rg ${1}

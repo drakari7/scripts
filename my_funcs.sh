@@ -11,38 +11,44 @@ gd (){
     fi
 }
 
-mlog(){
-    ssh -t "${1}" 'cd /home/melzi-prod/melzi/crypto_prod/main/log; bash -l'
-}
-
-blog(){
-    ssh -t "${1}" 'cd /home/melzi-prod/melzi/crypto/beta/log; bash -l'
-}
-
-prodssh() {
-    # box=$(grep -A1 "${1}$" ~/.ssh/config | grep "Hostname" | awk '{print $NF}')
-    # ssh -t melzi-prod@mlz5 "ssh ${box}"
-    ssh "melzi-prod@${1}"
-}
-
-gcp() {
-    git commit -m "${1} #auto_promote"
-}
-
 ts() {
     date -d @${1:0:10}
 }
 
-scplog() {
-    cd ~/random
-    scp -l 500000 ${1}:~/log log
-    cp log log.bak
-    nvim log
+# rgp <rg-pattern> <path-pattern>: ripgrep within files whose path matches the pattern.
+rgp() {
+    fd -tf -p ${2} | xargs rg ${1}
 }
 
-prodscplog() {
-    cd ~/random
-    scp -l 500000 melzi-prod@${1}:~/log log
-    cp log log.bak
-    nvim log
+# last <glob/files>: open the last (alphabetically) matching file in less.
+last() {
+    less "$(ls "$@" | tail -1)"
 }
+
+# ---------------------- Blocktech -------------------------------
+
+# bump <glob> <version>: update the "version:" line in clusters/<glob> files.
+# Run from a config root dir (the one containing clusters/).
+bump() {
+    (
+        set -euo pipefail
+        if [[ $# -ne 2 ]]; then
+            echo "usage: bump <glob> <version>" >&2
+            exit 1
+        fi
+        local glob="$1" version="$2"
+        shopt -s nullglob
+        local files=(clusters/$glob)
+        if [[ ${#files[@]} -eq 0 ]]; then
+            echo "no files match: clusters/$glob" >&2
+            exit 1
+        fi
+        local f
+        for f in "${files[@]}"; do
+            sed -i "s|^version:.*|version: $version|" "$f"
+            echo "updated: $f"
+        done
+    )
+}
+
+# ---------------------- Blocktech -------------------------------
