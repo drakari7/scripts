@@ -45,21 +45,52 @@ nf() { _fzz_open nvim; }
 lf() { _fzz_open less; }
 bf() { _fzz_open bat;  }
 
-# rf — ripgrep + fzf, basename-prefixed for fast filename matching
+# rf — ripgrep + fzf, basename-prefixed for fast filename matching.
+# tab to multi-select; opens one buffer per matched file (first match shown at
+# its line, the rest loaded) and loads *every* match into the quickfix list
 rf() {
-    rg --color=always --line-number --no-heading --smart-case \
+    local out
+    out=$(rg --color=always --line-number --no-heading --smart-case \
        --max-columns=200 --max-columns-preview --colors='path:none' "${*:-}" |
        awk -F: '{
            n = split($1, p, "/")
            print "\033[1;35m" p[n] "\033[0m:" $0
        }' |
-       fzf --ansi \
+       fzf --ansi --multi \
            --color "hl:-1:underline,hl+:-1:underline:reverse" \
            --delimiter : \
            --with-nth=1,3.. \
            --preview 'bat --theme=gruvbox-light --color=always {2} --highlight-line {3}' \
-           --preview-window 'right,50%,border-left,+{3}+3/3,~3' \
-           --bind 'enter:become(nvim {2} +{3})'
+           --preview-window 'right,50%,border-left,+{3}+3/3,~3') || return
+    [[ -z $out ]] && return
+
+    setopt local_options extended_glob
+    local -a nvim_args
+    local -A seen
+    local line file lineno text qf
+    local -i n=0
+    qf=$(mktemp) || qf=
+    while IFS= read -r line; do
+        line=${line//$'\e'\[[0-9;]##m/}   # strip ANSI, just in case
+        [[ -z $line ]] && continue
+        line=${line#*:}                   # drop the basename column
+        file=${line%%:*}                  # full path
+        line=${line#*:}
+        lineno=${line%%:*}                # line number
+        text=${line#*:}                   # match text
+        (( n++ ))
+        [[ -n $qf ]] && print -r -- "$file:$lineno:$text" >> $qf   # quickfix entry
+        (( $+seen[$file] )) && continue   # one buffer per file
+        seen[$file]=1
+        if (( ${#nvim_args} == 0 )); then
+            nvim_args+=("+$lineno" "$file")
+        else
+            nvim_args+=(-c "badd +$lineno ${file// /\\ }")
+        fi
+    done <<< "$out"
+    [[ -n $qf && $n -gt 1 ]] && nvim_args+=(-c "cgetfile $qf" -c "copen" -c "wincmd p")
+    (( ${#nvim_args} )) && nvim "${nvim_args[@]}"
+    [[ -n $qf ]] && rm -f $qf
 }
 
 # ─── system ────────────────────────────────────────────────────────────────────
