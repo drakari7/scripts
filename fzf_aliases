@@ -57,9 +57,11 @@ rf() {
            print "\033[1;35m" p[n] "\033[0m:" $0
        }' |
        fzf --ansi --multi \
+           --header 'enter: nvim · ctrl-l: less' \
            --color "hl:-1:underline,hl+:-1:underline:reverse" \
            --delimiter : \
            --with-nth=1,3.. \
+           --bind 'ctrl-l:execute(less +{3} {2})' \
            --preview 'bat --theme=gruvbox-light --color=always {2} --highlight-line {3}' \
            --preview-window 'right,50%,border-left,+{3}+3/3,~3') || return
     [[ -z $out ]] && return
@@ -264,11 +266,11 @@ _fzf_dirty_files() {
 }
 
 # ng — open dirty files in nvim. No arg: working-tree dirty/untracked files.
-# With N (e.g. `ng 1`): files changed in the last N commits.
+# With N (e.g. `ng 1`): files changed in the Nth commit behind HEAD (ng 1 = HEAD).
 ng() {
     local files
     if [[ -n $1 ]]; then
-        files=$(git diff --name-only "HEAD~$1" HEAD) || return
+        files=$(git diff-tree --no-commit-id --name-only -r "HEAD~$(($1 - 1))") || return
     else
         files=$(git ls-files -m -o --deduplicate --exclude-standard) || return
     fi

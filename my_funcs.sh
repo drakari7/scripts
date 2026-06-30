@@ -1,28 +1,33 @@
-#!/bin/bash
+#!/bin/zsh
 
-gd (){
-    re='^[0-9]+$'
-    if ! [[ $1 =~ $re ]] ; then
-        git diff $@
+gd() {
+    if [[ $1 =~ ^[0-9]+$ ]]; then
+        local num=$1; shift
+        git diff "HEAD~${num}" HEAD "$@"
     else
-        num="${1}"
-        shift
-        git diff HEAD~${num} HEAD $@
+        git diff "$@"
     fi
 }
 
 ts() {
-    date -d @${1:0:10}
+    date -d "@${1:0:10}"
 }
 
-# rgp <rg-pattern> <path-pattern>: ripgrep within files whose path matches the pattern.
+# rgp <search-regex> <path-regex> [extra rg flags...]
+# Search for <search-regex> inside files whose PATH matches <path-regex> (both regex).
+#   rgp "some string" 'clusters.*evrec'
+#   rgp "some string" evrec -i        # path containing 'evrec', case-insensitive
 rgp() {
-    fd -tf -p ${2} | xargs rg ${1}
+    [[ $# -ge 2 ]] || { echo "usage: rgp <search-regex> <path-regex> [rg flags]" >&2; return 1; }
+    local pat=$1 pathre=$2; shift 2
+    fd -tf -p -0 "$pathre" | xargs -0 -r rg "$@" -e "$pat"
 }
 
-# last <glob/files>: open the last (alphabetically) matching file in less.
+# last <files/dirs>: open the most-recently-modified match in less.
 last() {
-    less "$(ls "$@" | tail -1)"
+    local f
+    f=$(ls -t -- "$@" 2>/dev/null | head -1)
+    [[ -n $f ]] && less -- "$f"
 }
 
 # ---------------------- Blocktech -------------------------------
@@ -30,25 +35,22 @@ last() {
 # bump <glob> <version>: update the "version:" line in clusters/<glob> files.
 # Run from a config root dir (the one containing clusters/).
 bump() {
-    (
-        set -euo pipefail
-        if [[ $# -ne 2 ]]; then
-            echo "usage: bump <glob> <version>" >&2
-            exit 1
-        fi
-        local glob="$1" version="$2"
-        shopt -s nullglob
-        local files=(clusters/$glob)
-        if [[ ${#files[@]} -eq 0 ]]; then
-            echo "no files match: clusters/$glob" >&2
-            exit 1
-        fi
-        local f
-        for f in "${files[@]}"; do
-            sed -i "s|^version:.*|version: $version|" "$f"
-            echo "updated: $f"
-        done
-    )
+    if [[ $# -ne 2 ]]; then
+        echo "usage: bump <glob> <version>" >&2
+        return 1
+    fi
+    local glob=$1 version=$2
+    # ${~glob} forces globbing of the variable's contents; (N) = nullglob (empty if no match).
+    local files=(clusters/${~glob}(N))
+    if (( ${#files} == 0 )); then
+        echo "no files match: clusters/$glob" >&2
+        return 1
+    fi
+    local f
+    for f in $files; do
+        sed -i "s|^version:.*|version: $version|" "$f"
+        echo "updated: $f"
+    done
 }
 
 # ---------------------- Blocktech -------------------------------
