@@ -51,9 +51,12 @@ bf() { _fzz_open bat;  }
 rf() {
     local out
     out=$(rg --color=always --line-number --no-heading --smart-case \
+       --hidden --glob '!.git/' \
        --max-columns=200 --max-columns-preview --colors='path:none' "${*:-}" |
-       awk -F: '{
-           n = split($1, p, "/")
+       awk -F: -v esc="$(printf '\033')" '{
+           path = $1
+           gsub(esc "\\[[0-9;]*m", "", path)
+           n = split(path, p, "/")
            print "\033[1;35m" p[n] "\033[0m:" $0
        }' |
        fzf --ansi --multi \
