@@ -23,7 +23,7 @@ _view_git_log_line='
 # fzz — fzf file picker. Multi-select with tab; prints one file per line.
 fzz() {
     fzf --multi \
-        --preview "bat --style=numbers,changes,header --theme=gruvbox-light --color=always --line-range :500 {}" \
+        --preview "bat --style=numbers,changes,header --color=always --line-range :500 {}" \
         --preview-window=right:60% \
         --bind 'ctrl-u:preview-half-page-up,ctrl-d:preview-half-page-down'
 }
@@ -69,7 +69,7 @@ rf() {
            --delimiter : \
            --with-nth=1,3.. \
            --bind 'ctrl-l:execute(less +{3} {2})' \
-           --preview 'bat --theme=gruvbox-light --color=always {2} --highlight-line {3}' \
+           --preview 'bat --color=always {2} --highlight-line {3}' \
            --preview-window 'right,50%,border-left,+{3}+3/3,~3') || return
     [[ -z $out ]] && return
 
