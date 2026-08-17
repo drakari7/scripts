@@ -28,9 +28,13 @@ fzz() {
         --bind 'ctrl-u:preview-half-page-up,ctrl-d:preview-half-page-down'
 }
 
+# Copy stdin to the clipboard via OSC 52, so it works the same locally and over
+# ssh — the escape is handled by the terminal, landing in the client's clipboard.
+_clip() { printf '\033]52;c;%s\a' "$(base64 | tr -d '\n')" }
+
 # nf / lf / bf — pick file(s) with fzz, open in nvim / less / bat, then on exit
 # print the absolute path(s) so the picked file isn't lost from the scrollback,
-# and copy them to the clipboard (delete the xclip line to disable).
+# and copy them to the clipboard (delete the _clip line to disable).
 _fzz_open() {
     local opener=$1 files
     files=$(fzz) || return
@@ -39,7 +43,7 @@ _fzz_open() {
     "$opener" "${paths[@]}"                   # blocks until you exit
     paths=("${paths[@]:A}")                    # -> absolute paths
     print -Pn "%F{green}↪ opened:%f "; print -r -- "${(j:, :)paths}"
-    command -v xclip >/dev/null && print -rn -- "${(pj:\n:)paths}" | xclip -selection clipboard
+    print -rn -- "${(pj:\n:)paths}" | _clip
 }
 nf() { _fzz_open nvim; }
 lf() { _fzz_open less; }
