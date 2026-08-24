@@ -52,10 +52,10 @@ bf() { _fzz_open bat;  }
 # rf — ripgrep + fzf, basename-prefixed for fast filename matching.
 # tab to multi-select; opens one buffer per matched file (first match shown at
 # its line, the rest loaded) and loads *every* match into the quickfix list
+# --smart-case, --hidden and the prune globs come from $RIPGREP_CONFIG_PATH.
 rf() {
     local out
-    out=$(rg --color=always --line-number --no-heading --smart-case \
-       --hidden --glob '!.git/' \
+    out=$(rg --color=always --line-number --no-heading \
        --max-columns=200 --max-columns-preview --colors='path:none' "${*:-}" |
        awk -F: -v esc="$(printf '\033')" '{
            path = $1
