@@ -275,13 +275,14 @@ _fzf_dirty_files() {
 # ng — open dirty files in nvim. No arg: working-tree dirty/untracked files.
 # With N (e.g. `ng 1`): files changed in the Nth commit behind HEAD (ng 1 = HEAD).
 ng() {
-    local files
+    local root files
+    root=$(git rev-parse --show-toplevel) || return
     if [[ -n $1 ]]; then
         files=$(git diff-tree --no-commit-id --name-only -r "HEAD~$(($1 - 1))") || return
     else
-        files=$(git ls-files -m -o --deduplicate --exclude-standard) || return
+        files=$(git ls-files -m -o --deduplicate --exclude-standard --full-name) || return
     fi
-    [[ -n $files ]] && nvim ${(f)files}
+    [[ -n $files ]] && nvim ${${(f)files}/#/$root/}
 }
 
 # ga — fuzzy git add of dirty files
