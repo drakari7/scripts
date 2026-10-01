@@ -1,23 +1,6 @@
 #!/bin/zsh
 # fzf_aliases — interactive pickers for files, git branches/commits, and dirty files.
 
-# ─── shared helpers ────────────────────────────────────────────────────────────
-
-# Compact one-line `git log` with refs, used by fcoc and fsh. Forwards args (e.g. a path).
-_git_log_compact() {
-    git log --color=always \
-        --format="%C(auto)%h %s %C(bold black)%cr %C(cyan)%an" "$@"
-}
-
-# fzf --preview snippet: show the commit at the selected line through delta.
-# Stored as a multi-line string (not a function) because fzf runs preview commands
-# in a fresh `sh -c` subshell that can't see zsh functions defined in the parent.
-# {} is expanded by fzf (the highlighted line); $hash is expanded by sh at run time.
-_view_git_log_line='
-    hash=$(echo {} | grep -o "[a-f0-9]\{7\}" | head -1)
-    git show --color=always "$hash" | delta --features=diff-so-fancy --paging=always
-'
-
 # ─── file & content search ─────────────────────────────────────────────────────
 
 # fzz — fzf file picker. Multi-select with tab; prints one file per line.
@@ -257,6 +240,23 @@ fcs() {
 
 # ─── git: dirty files (modified + untracked) ───────────────────────────────────
 
+# ─── helpers ────────────────────────────────────────────────────────────
+
+# Compact one-line `git log` with refs, used by fcoc and fsh. Forwards args (e.g. a path).
+_git_log_compact() {
+    git log --color=always \
+        --format="%C(auto)%h %s %C(bold black)%cr %C(cyan)%an" "$@"
+}
+
+# fzf --preview snippet: show the commit at the selected line through delta.
+# Stored as a multi-line string (not a function) because fzf runs preview commands
+# in a fresh `sh -c` subshell that can't see zsh functions defined in the parent.
+# {} is expanded by fzf (the highlighted line); $hash is expanded by sh at run time.
+_view_git_log_line='
+    hash=$(echo {} | grep -o "[a-f0-9]\{7\}" | head -1)
+    git show --color=always "$hash" | delta --features=diff-so-fancy --paging=always
+'
+
 # Shared picker for dirty/untracked files. Extra fzf args are forwarded.
 _fzf_dirty_files() {
     git ls-files -m -o --deduplicate --exclude-standard |
@@ -271,6 +271,8 @@ _fzf_dirty_files() {
             --preview-window=right:60% \
             "$@"
 }
+
+# ─── git scripts ────────────────────────────────────────────────────────────
 
 # ng — open dirty files in nvim. No arg: working-tree dirty/untracked files.
 # With N (e.g. `ng 1`): files changed in the Nth commit behind HEAD (ng 1 = HEAD).
