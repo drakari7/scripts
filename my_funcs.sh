@@ -9,6 +9,10 @@ gd() {
     fi
 }
 
+greb() {
+    git rebase -i HEAD~${1}
+}
+
 ts() {
     date -d "@${1:0:10}"
 }
